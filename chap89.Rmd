@@ -1,0 +1,324 @@
+---
+title: "Bayesian Chap 8 and 9 Assignment"
+author: "Meng Yuan" 
+output:
+  pdf_document:
+    latex_engine: xelatex
+fontsize: 12pt 
+---
+
+## Question 1
+
+Here's the dataset, scores are standardized, judge and wine are constructed as index variables:
+```{r include=FALSE}
+library(rethinking)
+```
+
+```{r}
+data(Wines2012)
+d <- Wines2012
+dat_list <- list(
+    S = standardize(d$score),
+    jid = as.integer(d$judge),
+    wid = as.integer(d$wine)
+)
+```
+
+### Use weakly informative priors
+The outcome variable is standardized, Normal(0.0.5) makes a weakly informative prior.
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+m1.1 <- ulam(
+    alist(
+        S ~ dnorm( mu , sigma ),
+        mu <- a[jid] + w[wid],
+        a[jid] ~ dnorm(0,0.5),
+        w[wid] ~ dnorm(0,0.5),
+        sigma ~ dexp(1)
+    ), data=dat_list, chains=4, cores=4, log_lik=TRUE)
+```
+
+Four chains and the default sample size are used. The effective sample sizes show good efficiency of the chains, and Rhat values show good convergence of the chains (only some parameters are shown here).
+
+```{r}
+precis(m1.1, 2, pars =c("a[1]","a[2]","w[1]","w[2]","w[20]","sigma"))
+```
+
+The shapes of traceplots show good mixing and stationarity of the chains (only some parameters are shown here).
+```{r out.width = '60%', fig.align = "center"}
+traceplot( m1.1, pars =c("a[1]","a[2]","w[1]","w[2]","w[20]","sigma"))
+```
+
+Based on the posterior distribution of the parameters, a[4], a[5], a[8], a[9] show reliable deviations from zero, these judges give higher or lower ratings than average. There's less variation among the wines than among the judges, still w[18] is smaller than zero, meaning the 18th wine rates the lowest. w[4] is larger than the others, the 4th wine is the best. 
+```{r out.width = '60%', fig.align = "center"}
+precis_plot(precis(m1.1,2))
+```
+
+### Use weaker priors 
+
+Normal(0,1) makes a weaker prior for the index variables compared to the previous Normal(0,0.5).
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+m1.2 <- ulam(
+    alist(
+        S ~ dnorm( mu , sigma ),
+        mu <- a[jid] + w[wid],
+        a[jid] ~ dnorm(0,1), 
+        w[wid] ~ dnorm(0,1),
+        sigma ~ dexp(1)
+    ), data=dat_list, chains=4, cores=4, log_lik=TRUE)
+```
+
+The effective sample sizes (Rhat) are smaller, chains have less good convergence in this model (only some parameters are shown here).
+```{r}
+precis( m1.2 , 2, pars =c("a[1]","a[2]","w[1]","w[2]","w[20]","sigma"))
+```
+
+The traceplots show good mixing (only some parameters are shown).
+```{r out.width = '60%', fig.align = "center"}
+traceplot(m1.2, pars =c("a[1]","a[2]","w[1]","w[2]","w[20]","sigma"))
+```
+
+There are not many noticeable changes in the posterior distributions, in fact, model m1.1 and m1.2 have similar posterior distributions. 
+```{r out.width = '60%', fig.align = "center"}
+precis_plot(precis(m1.2,2))
+```
+
+But based on WAIC, model m1.1 is supported, meaning the weakly informative prior works better than the weaker prior. The regularization provided by the weakly informative prior leads to better prediction.
+```{r}
+compare( m1.1 , m1.2 , func=WAIC )
+```
+
+\  
+
+## Question 2
+
+### Indicator variable vs. index variable
+
+Here's the model using __indicator variables__. W=1 indicates American wine, J=1 indicates American judge, and R=1 indicates red wine.
+```{r}
+dat_list2 <- list(
+    S = standardize(d$score),
+    W = d$wine.amer,
+    J = d$judge.amer,
+    R = ifelse(d$flight=="red",1L,0L)
+)
+```
+
+From the results of question 1 we know there's not much variation among the wines. Weakly informative prior can be used as: Normal(0,0.2) for the intercept and Normal(0,0.5) for the slopes.
+
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+m2a <- ulam(
+    alist(
+        S ~ dnorm( mu , sigma ),
+        mu <- a + bW*W + bJ*J + bR*R,
+        a ~ dnorm( 0 , 0.2 ),
+        c(bW,bJ,bR) ~ dnorm( 0 , 0.5 ),
+        sigma ~ dexp(1)
+    ), data=dat_list2 , chains=4 , cores=4, log_lik=TRUE)
+```
+
+The posterior distributions show there are not much variation for the flight (bR=0), meaning the red and white wines are on average the same. It's also shown that American judges give higher ratings on average (bJ>0). American wines have slightly lower ratings on average than French wines (bW is mostly below zero). However, the absolute sizes of the differences due to wines or judges are not very large.
+
+```{r}
+precis(m2a, 2)
+```
+
+The effective sample sizes show good efficiency of the chains, and Rhat shows good convergence of the chains. The shapes of traceplots show good mixing and stationarity of the chains.
+```{r out.width = '60%', fig.align = "center"}
+traceplot(m2a)
+```
+
+\ 
+
+Here's the model using __index variables__: wid (1 for French wines and 2 for American/NJ wines), jid (1 for French judges and 2 for American judges), and fid (1 for red wines and 2 for white).
+
+```{r}
+dat_list2b <- list(
+    S = standardize(d$score),
+    wid = d$wine.amer + 1L,
+    jid = d$judge.amer + 1L,
+    fid = ifelse(d$flight=="red",1L,2L)
+)
+```
+
+Weakly informative priors Normal(0,0.5) are used for the index variables.
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+m2b <- ulam(
+    alist(
+        S ~ dnorm( mu , sigma ),
+        mu <- w[wid] + j[jid] + f[fid],
+        w[wid] ~ dnorm( 0 , 0.5 ),
+        j[wid] ~ dnorm( 0 , 0.5 ),
+        f[wid] ~ dnorm( 0 , 0.5 ),
+        sigma ~ dexp(1)
+    ), data=dat_list2b , chains=4 , cores=4, log_lik=TRUE)
+```
+
+```{r}
+precis(m2b, 2)
+```
+The effective sample sizes show good efficiency of the chains, and Rhat values show good convergence of the chains. The shapes of traceplots show good mixing and stationarity of the chains (only some parameters are shown).
+```{r out.width = '60%', fig.align = "center"}
+traceplot(m2b, pars =c("j[1]","j[2]","w[1]","w[2]","f[1]","f[2]"))
+```
+
+The posterior distributions from models using indicator and index variables are the same, as is shown by the wine parameter. The posterior distribution of diff_w from model m2b is very close to that of bW from model m2b. 
+```{r}
+post <- extract.samples(m2b)
+diff_w <- post$w[,2] - post$w[,1]
+precis(diff_w)
+```
+
+But using index variables means using more parameters. Based on the diagnostics, in the model using indicator variables (model m2a), the chains explores more efficiently (larger n_eff). 
+
+There are tight correlations for each pair of index parameters of the same type in model m2b. The redundant parameterization by using index variables causes higher correlations in the posterior, and less efficiency for the chains.
+```{r out.width = '60%', fig.align = "center"}
+pairs(m2b)
+```
+
+
+### Prior choice
+Next I'll use tighter priors for the above models using indicator and index variables.
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+m2.1a <- ulam(
+    alist(
+        S ~ dnorm( mu , sigma ),
+        mu <- a + bW*W + bJ*J + bR*R,
+        a ~ dnorm( 0 , 0.2 ),
+        c(bW,bJ,bR) ~ dnorm( 0 , 0.2 ),
+        sigma ~ dexp(1)
+    ), data=dat_list2 , chains=4 , cores=4, log_lik=TRUE)
+```
+
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+m2.1b <- ulam(
+    alist(
+        S ~ dnorm( mu , sigma ),
+        mu <- w[wid] + j[jid] + f[fid],
+        w[wid] ~ dnorm( 0 , 0.2 ),
+        j[wid] ~ dnorm( 0 , 0.2 ),
+        f[wid] ~ dnorm( 0 , 0.2 ),
+        sigma ~ dexp(1)
+    ), data=dat_list2b , chains=4 , cores=4, log_lik=TRUE)
+```
+
+The difference in effective sample sizes becomes smaller. In the model using index variables (m2b, m2.1b), regularization of the prior (narrower priors) increase the efficiency of the chains.
+```{r}
+precis(m2.1a, 2)
+```
+
+```{r}
+precis(m2.1b, 2)
+```
+
+WAIC supports models using indicator variables (m2a, m2.1a) and models with regularized priors (m2.1a, m2.1b), as discussed above.
+```{r}
+compare(m2a, m2b, m2.1a, m2.1b)
+```
+
+\ 
+
+## Question 3
+
+```{r include=FALSE}
+dat_list2 <- list(
+    S = standardize(d$score),
+    W = d$wine.amer,
+    J = d$judge.amer,
+    R = ifelse(d$flight=="red",1L,0L)
+)
+```
+
+Here's the model using indicator variables, with interaction terms added to the model. The priors for the interaction terms are narrower as the interactions represent only part of the data.
+
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+ m3a <- ulam(
+    alist(
+    S ~ dnorm( mu , sigma ),
+    mu <- a + bW*W + bJ*J + bR*R +
+          bWJ*W*J + bWR*W*R + bJR*J*R,
+    a ~ dnorm(0,0.2),
+    c(bW,bJ,bR) ~ dnorm(0,0.5),
+    c(bWJ,bWR,bJR) ~ dnorm(0,0.25),
+    sigma ~ dexp(1)
+), data=dat_list2 , chains=4 , cores=4, log_lik=TRUE)
+```
+
+The effective sample sizes, Rhat values, and shapes of traceplots all look good. The effective sample sizes show good efficiency of the chains, and Rhat values show good convergence of the chains.
+```{r}
+precis(m3a)
+```
+
+The shapes of traceplots show good mixing and stationarity of the chains.
+```{r out.width = '60%', fig.align = "center"}
+traceplot(m3a)
+```
+
+Next we can look at the posterior predictions of parameters for the interactions. The three letters represent country, judge, and flight, respectively. The rows labeled with AFR (NJ red wines as judged by French judges) and FAR (French red wines as judged by American judges) show the most deviation from zero. This shows that French judges don't like NJ red wines a lot, and American judges like French red wines more. The parameters for other interactions do not show reliable deviation from zero.
+
+```{r  out.width = '50%', fig.align = "center"}
+pred_dat <- data.frame(
+    W = rep( 0:1 , times=4 ),
+    J = rep( 0:1 , each=4 ),
+    R = rep( c(0,0,1,1) , times=2 )
+)
+mu <- link( m3a , data=pred_dat )
+row_labels <- paste( ifelse(pred_dat$W==1,"A","F") ,
+                 ifelse(pred_dat$J==1,"A","F") ,
+                 ifelse(pred_dat$R==1,"R","W") , sep="" )
+precis_plot( precis( list(mu=mu) , 2 ) , labels=row_labels)
+```
+
+
+### Prior choice
+Previously in model m3a, I used regularized priors Normal(0,0.25) for the interaction terms. Next I'll use tighter, Normal(0,0.1), and flatter, Normal(0,10) priors and see how they influence the results.
+
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+# flat prior
+m3b <- ulam(
+    alist(
+    S ~ dnorm( mu , sigma ),
+    mu <- a + bW*W + bJ*J + bR*R +
+          bWJ*W*J + bWR*W*R + bJR*J*R,
+    a ~ dnorm(0,0.2),
+    c(bW,bJ,bR) ~ dnorm(0,0.5),
+    c(bWJ,bWR,bJR) ~ dnorm(0,10),
+    sigma ~ dexp(1)
+), data=dat_list2 , chains=4 , cores=4, log_lik=TRUE)
+```
+
+```{r echo=TRUE, message = FALSE, warning = FALSE, results = "hide"}
+# tighter prior
+m3c <- ulam(
+    alist(
+    S ~ dnorm( mu , sigma ),
+    mu <- a + bW*W + bJ*J + bR*R +
+          bWJ*W*J + bWR*W*R + bJR*J*R,
+    a ~ dnorm(0,0.2),
+    c(bW,bJ,bR) ~ dnorm(0,0.5),
+    c(bWJ,bWR,bJR) ~ dnorm(0,0.1),
+    sigma ~ dexp(1)
+), data=dat_list2 , chains=4 , cores=4, log_lik=TRUE)
+```
+
+Here's what their WAIC scores look like:
+```{r}
+compare(m3a, m3b, m3c)
+```
+
+Model m3a and m3c with regularized priors perform similarly in terms of WAIC, and they are better supported than model m3b with flatter priors.
+
+Model m3b uses a very flat prior for the interactions. The posterior distributions have some noticeable changes (AFW, FAW). A flat prior is less informative as a regularized one, which influences the predictions.
+```{r out.width = '50%', fig.align = "center"}
+pred_dat <- data.frame(
+    W = rep( 0:1 , times=4 ),
+    J = rep( 0:1 , each=4 ),
+    R = rep( c(0,0,1,1) , times=2 )
+)
+mu <- link( m3b , data=pred_dat )
+row_labels <- paste( ifelse(pred_dat$W==1,"A","F") ,
+                 ifelse(pred_dat$J==1,"A","F") ,
+                 ifelse(pred_dat$R==1,"R","W") , sep="" )
+precis_plot( precis( list(mu=mu) , 2 ) , labels=row_labels )
+```
+
+

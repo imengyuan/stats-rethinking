@@ -1,0 +1,295 @@
+---
+title: "Bayesian Chap 5 and 6 Assignment"
+author: "Meng Yuan" 
+output: pdf_document
+---
+
+<br>
+
+```{r include=FALSE}
+library(rethinking)
+data(foxes)
+d<-foxes
+d$W<-standardize(d$weight)
+d$A<-standardize(d$area)
+d$F <- standardize(d$avgfood)
+d$G<-standardize(d$groupsize)
+str(d)
+```
+
+
+## 1. Modelling area -> weight
+
+### 1.1 Using priors of normal distributions
+
+```{r}
+m1.0<- quap(
+    alist(
+        W ~ dnorm(mu,sigma),
+        mu ~ a + b_A * A,
+        a ~ dnorm(0,0.2), 
+        b_A ~ dnorm(0,0.5), 
+        sigma ~ dexp(1)
+    ),
+    data=d
+)
+precis(m1.0)
+# prior predictive simulation
+set.seed(10)
+prior <- extract.prior(m1.0)
+mu <- link(m1.0, post=prior, data = list(A=c(-3,3)))
+plot( NULL , xlim=c(-2,2) , ylim=c(-2,2), xlab="area (std)", ylab="weight (std)")
+for (i in 1:50) lines(c(-3,3), mu[i,], col=col.alpha("black",0.4) )
+```
+
+<br>
+
+### 1.2 Using priors of uniform distributions
+
+```{r}
+m1.1<- quap(
+    alist(
+        W ~ dnorm(mu,sigma),
+        mu ~ a + b_A * A,
+        a ~ dunif(-0.5,0.5), 
+        b_A ~ dunif(-1,1), 
+        sigma ~ dexp(1)
+    ),
+    data=d
+)
+precis(m1.1)
+# prior predictive simulation
+set.seed(10)
+prior <- extract.prior(m1.1)
+mu <- link(m1.1, post=prior, data = list(A=c(-3,3)))
+plot( NULL , xlim=c(-2,2) , ylim=c(-2,2), xlab="area (std)", ylab="weight (std)")
+for (i in 1:50) lines(c(-3,3), mu[i,], col=col.alpha("black",0.4) )
+```
+
+
+The slope b_A is close to zero, based on the model, there's no causal influence of area on weight. 
+
+
+Following priors are used:  
+
+a ~ Uniform(-0.5,0.5)
+
+b ~ Uniform(-1,1)
+
+The standardized data has a mean of 0 and a standard deviation of 1, so the intercept a should be close to 0. The standard deviation of area is 0.93, when the slope b is 1, a change of 0.93 in area is associated with a full standard deviation change in weight. Extremely strong is unlikely so b is mostly between -1 and 1. The prior predictive simulation shows the model's prior predictions stays within the possible range.
+
+Compared to using the old priors of normal distributions, the posterior means are close.
+
+<br>
+
+###  1.3 Using less regularized priors of normal distributions
+
+```{r}
+m1.2<- quap(
+    alist(
+        W ~ dnorm(mu,sigma),
+        mu ~ a + b_A * A,
+        a ~ dnorm(0,1), 
+        b_A ~ dnorm(0,1),  
+        sigma ~ dexp(1)
+    ),
+    data=d
+)
+precis(m1.2)
+# prior predictive simulation
+set.seed(10)
+prior <- extract.prior(m1.2)
+mu <- link(m1.2, post=prior, data = list(A=c(-3,3)))
+plot( NULL , xlim=c(-2,2) , ylim=c(-2,2), xlab="area (std)", ylab="weight (std)")
+for (i in 1:50) lines(c(-3,3), mu[i,], col=col.alpha("black",0.4) )
+```
+
+
+Even though the priors of the slope and intercept are vaguer, the posterior means are close and the results are consistent.
+
+<br>
+
+## 2. Modelling avgfood -> weight
+
+### 2.1 Using priors of normal distributions
+
+```{r}
+m2.0 <- quap(
+    alist(
+        W ~ dnorm( mu , sigma ),
+        mu <- a + b_F * F,
+        a ~ dnorm(0,0.2),
+        b_F ~ dnorm(0,0.5),
+        sigma ~ dexp(1)
+    ), data=d )
+precis(m2.0)
+# prior predictive simulation
+set.seed(10)
+prior <- extract.prior( m2.0 )
+mu <- link( m2.0 , post=prior , data=list( F=c(-3,3) ) )
+plot( NULL , xlim=c(-2,2) , ylim=c(-2,2), xlab="avgfood (std)", ylab="weight (std)" )
+for ( i in 1:50 ) lines( c(-2,2) , mu[i,] , col=col.alpha("black",0.4) )
+```
+
+
+
+<br>
+
+###  2.2 Using less regularized priors of normal distributions
+
+```{r}
+m2.1 <- quap(
+    alist(
+        W ~ dnorm( mu , sigma ),
+        mu <- a + b_F*F,
+        a ~ dnorm(0,1),
+        b_F ~ dnorm(0,1),
+        sigma ~ dexp(1)
+    ), data=d )
+precis(m2.1)
+# prior predictive simulation
+set.seed(10)
+prior <- extract.prior( m2.1 )
+mu <- link( m2.1 , post=prior , data=list( F=c(-2,2) ) )
+plot( NULL , xlim=c(-2,2) , ylim=c(-2,2), xlab="avgfood (std)", ylab="weight (std)" )
+for ( i in 1:50 ) lines( c(-2,2) , mu[i,] , col=col.alpha("black",0.4) )
+```
+
+b_F is close to zero, based on the model, there's no causal influence of avgfood on weight. Compared to the more sensible priors from 2.1, the posterior means from vaguer priors are close.
+
+
+<br>
+
+## 3. Modelling groupsize -> weight 
+
+### 3.1 Using priors of normal distributions
+
+Need to adjust for avgfood as a covariate.
+
+```{r}
+# avgfood, groupsize -> weight
+m3.0<- quap(
+    alist(
+        W ~ dnorm(mu,sigma),
+        mu ~ a + b_F * F + b_G * G,
+        a ~ dnorm(0,1),
+        c(b_F,b_G) ~ dnorm(0,1),
+        sigma ~ dexp(1)
+    ),
+    data=d
+)
+# round( vcov( m3 ) , 4 )
+# pairs(m3)
+# prior predictive simulation
+# set.seed(10)
+# prior <- extract.prior( m3.0 )
+# mu <- link( m3.0 , post=prior , data=list( F=c(-2,2), G=c(-2,2) ) )
+# plot( NULL , xlim=c(-2,2) , ylim=c(-2,2), xlab="avgfood (std)", ylab="weight (std)" )
+# for ( i in 1:50 ) lines( c(-2,2) , mu[i,] , col=col.alpha("black",0.4) )
+precis(m3.0)
+```
+
+
+<br>
+
+### 3.2 Using less regularized priors of normal distributions
+```{r}
+# avgfood, groupsize -> weight
+m3.1<- quap(
+    alist(
+        W ~ dnorm(mu,sigma),
+        mu ~ a + b_F * F + b_G * G,
+        a ~ dnorm(0,1),
+        c(b_F,b_G) ~ dnorm(0,1),
+        sigma ~ dexp(1)
+    ),
+    data=d
+)
+precis(m3.1)
+```
+
+The posterior means from vaguer priors are very close.
+
+
+<br>
+
+### 3.3 Posterior distribution
+
+```{r}
+# groupsize -> weight
+m4<- quap(
+    alist(
+        W ~ dnorm(mu,sigma),
+        mu ~ a + b_G * G,
+        a ~ dnorm(0,0.2),
+        b_G ~ dnorm(0,0.5),
+        sigma ~ dexp(1)
+    ),
+    data=d
+)
+plot( coeftab(m2.0, m3.0, m4) , pars=c("b_F","b_G") )
+```
+
+The model shows avgfood is positively associated with weight and groupsize is negatively associated with groupsize when controlling for each other. The posterior means of both associations increased after considering both predictor varables. 
+
+<br>
+
+```{r}
+m5<- quap(
+    alist(
+        # avgfood, groupsize -> weight
+        W ~ dnorm(mu,sigma),
+        mu ~ a + b_F * F + b_G * G,
+        a ~ dnorm(0,0.2),
+        c(b_F,b_G) ~ dnorm(0,0.5),
+        sigma ~ dexp(1),
+        # avgfood -> groupsize
+        G ~ dnorm(mu_F,sigma_F),
+        mu_F ~ a_F + b_FG * F,
+        a_F ~ dnorm(0,0.2),
+        b_FG ~ dnorm(0,0.5),
+        sigma_F ~ dexp(1)
+    ),
+    data=d
+)
+F_seq <- seq( from=-2 , to=2 , length.out=30 )
+sim_dat <- data.frame( F=F_seq )
+post <- extract.samples( m5 )
+G_sim <- with( post , sapply( 1:30 ,
+    function(i) rnorm( 1e3 , a_F + b_FG * F_seq[i] , sigma_F ) ) )
+W_sim <- with( post , sapply( 1:30 ,
+    function(i) rnorm( 1e3 , a + b_F*F_seq[i] + b_G*G_sim[,i] , sigma ) ) )
+#display counterfactual predictions
+par(mfrow=c(1,2))
+plot( sim_dat$F , colMeans(W_sim) , ylim=c(-2,2) , type="l" ,
+    xlab="manipulated F" , ylab="counterfactual W"  )
+shade( apply(W_sim,2,PI) , sim_dat$F )
+mtext( "Total counterfactual effect of F on W" )
+
+plot( sim_dat$F , colMeans(G_sim) , ylim=c(-2,2) , type="l" ,
+    xlab="manipulated F" , ylab="counterfactual G"  )
+shade( apply(G_sim,2,PI) , sim_dat$F )
+mtext( "counterfactual effect of F on G" )
+```
+
+```{r include=FALSE}
+# F_seq <- seq( from=-2 , to=2 , length.out=30 )
+# sim_dat <- data.frame( F=F_seq )
+# s <- sim( m5 , data=sim_dat , vars=c("G","W") )
+# #display counterfactual predictions
+# par(mfrow=c(1,2))
+# plot( sim_dat$F , colMeans(s$W) , ylim=c(-2,2) , type="l" ,
+#     xlab="manipulated F" , ylab="counterfactual W"  )
+# shade( apply(s$W,2,PI) , sim_dat$F )
+# mtext( "Total counterfactual effect of F on W" )
+# 
+# plot( sim_dat$F , colMeans(s$G) , ylim=c(-2,2) , type="l" ,
+#     xlab="manipulated F" , ylab="counterfactual G"  )
+# shade( apply(s$G,2,PI) , sim_dat$F )
+# mtext( "counterfactual effect of F on G" )
+```
+
+
+The direct influence of food on weight is positive but the total influence of food is very small, showing a masking effect.
+
+
